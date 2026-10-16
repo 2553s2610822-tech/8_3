@@ -2,157 +2,182 @@ import streamlit as st
 import pandas as pd
 from docx import Document
 import io
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import plotly.express as px
+import datetime
 
-# 페이지 설정
-st.set_page_app(page_title="행정 업무 자동화 로봇", layout="wide", page_icon="🤖")
+# 1. 페이지 초기 설정
+st.set_page_config(page_title="스마트 행정 업무 로봇", layout="wide", page_icon="🏢")
 
-st.title("🤖 행정 업무 자동화 로봇 시스템")
-st.caption("반복적인 행정 업무를 웹에서 쉽고 빠르게 처리하세요.")
+st.title("🏢 스마트 행정 종합 관리 시스템")
+st.caption("공문서 초안 작성부터 예산, 진행률 관리, 민원 분류까지 하나의 대시보드에서 처리합니다.")
 
-# 사이드바 메뉴 구성
-menu = ["🏠 홈", "📊 엑셀 데이터 분석", "📝 보고서 자동 생성", "📧 대량 이메일 발송"]
-choice = st.sidebar.selectbox("기능 선택", menu)
+# 사이드바 메뉴
+menu = ["✍️ 공문서 초안 자동 작성", "💰 예산 사용 현황", "📈 업무 진행률 현황", "📁 민원 종류 자동 분류"]
+choice = st.sidebar.radio("행정 로봇 기능 선택", menu)
 
 # ----------------------------------------------------
-# 🏠 홈 화면
+# ✍️ 기능 1: 키워드 기반 공문서 초안 자동 작성
 # ----------------------------------------------------
-if choice == "🏠 홈":
-    st.subheader("Welcome! 행정 로봇 가이드")
-    st.write("이 프로그램은 공공 및 일반 기업의 행정 업무 효율화를 위해 개발되었습니다.")
+if choice == "✍️ 공문서 초안 자동 작성":
+    st.subheader("✍️ 키워드 기반 공문서 초안 생성기")
+    st.write("몇 가지 키워드와 핵심 내용을 입력하면 행정 표준 서식의 공문서 초안을 생성합니다.")
     
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
     with col1:
-        st.info("📊 **엑셀 데이터 분석**\n\n파일을 업로드하여 통계 및 가공된 데이터를 확인합니다.")
+        doc_num = st.text_input("문서 번호", "행정지원과-2026-1015")
+        title_keyword = st.text_input("핵심 키워드 (제목용)", "개인정보 보호 교육")
+        dept_name = st.text_input("시행 부서", "행정지원과")
+        receiver = st.text_input("수신자", "전 부서 및 소속 기관장")
+        
+        # 키워드 조합 제목 자동 제안
+        default_title = f"[{공고}] 2026년도 {title_keyword} 실시 안내 및 협조 요청"
+        final_title = st.text_input("최종 공문 제목", default_title)
+        
     with col2:
-        st.info("📝 **보고서 자동 생성**\n\n내용을 입력하면 규격화된 Word 문서(.docx)로 변환합니다.")
-    with col3:
-        st.info("📧 **대량 이메일 발송**\n\n정해진 양식에 맞춰 여러 담당자에게 메일을 보냅니다.")
+        main_summary = st.text_area("공문 핵심 내용 (요약)", "1. 관련: 국가정보화 기본법 제15조\n2. 행정 안전성 확보를 위해 아래와 같이 전 직원 대상 교육을 실시하고자 하오니 협조 바랍니다.\n- 일시: 2026. 11. 02.(월)\n- 대상: 전 직원\n- 방법: 비대면 온라인 송출")
+        sign_off = st.text_input("발신 명의", "행 정 지 원 과 장 (직인생략)")
 
-# ----------------------------------------------------
-# 📊 엑셀 데이터 분석 기능
-# ----------------------------------------------------
-elif choice == "📊 엑셀 데이터 분석":
-    st.subheader("📊 엑셀/CSV 데이터 처리기")
-    
-    uploaded_file = st.file_uploader("분석할 엑셀 또는 CSV 파일을 업로드하세요.", type=["xlsx", "csv"])
-    
-    if uploaded_file is not None:
-        # 파일 확장자에 따라 읽기
-        if uploaded_file.name.endswith('.csv'):
-            df = pd.read_csv(uploaded_file)
-        else:
-            df = pd.read_excel(uploaded_file)
-            
-        st.success("파일 업로드 완료!")
-        
-        st.write("### 🔍 데이터 미리보기 (상위 5개 행)")
-        st.dataframe(df.head())
-        
-        st.write("### 📈 데이터 기본 요약 통계")
-        st.dataframe(df.describe(include='all').astype(str))
-        
-        # 특정 열 필터링 기능 예시
-        st.write("### 🛠️ 데이터 필터링 기능")
-        columns = df.columns.tolist()
-        selected_col = st.selectbox("필터링 기준 열 선택", columns)
-        unique_values = df[selected_col].unique().tolist()
-        selected_val = st.selectbox("값 선택", unique_values)
-        
-        filtered_df = df[df[selected_col] == selected_val]
-        st.write(f"Filtered Results ({len(filtered_df)}건):")
-        st.dataframe(filtered_df)
-
-# ----------------------------------------------------
-# 📝 보고서 자동 생성 기능
-# ----------------------------------------------------
-elif choice == "📝 보고서 자동 생성":
-    st.subheader("📝 공문 및 보고서 양식 자동 생성")
-    
-    doc_title = st.text_input("보고서 제목", "2026년도 4분기 행정 업무 보고서")
-    doc_dept = st.text_input("작성 부서", "행정지원팀")
-    doc_author = st.text_input("작성자", "홍길동 주무관")
-    doc_content = st.text_area("주요 내용 입력", "1. 본 문서의 목적은...\n2. 주요 추진 실적은 아래와 같음...")
-    
-    if st.button("Word 문서 생성하기"):
-        # ReportLab 대신 python-docx를 사용하여 실제 행정 서식 생성
+    if st.button("📄 공문서 초안(Word) 빌드"):
         doc = Document()
-        doc.add_heading(doc_title, level=0)
         
-        p = doc.add_paragraph()
-        p.add_run(f"작성부서: {doc_dept}\n").bold = True
-        p.add_run(f"작성자: {doc_author}\n")
-        p.add_run("-" * 40 + "\n\n")
+        # 행정 문서 스타일 적용
+        doc.add_paragraph(f"문서번호: {doc_num}\t\t 시행일자: {datetime.date.today().strftime('%Y. %m. %d.')}")
+        doc.add_paragraph(f"수 신 자: {receiver}")
+        doc.add_paragraph("-" * 60)
         
-        doc.add_paragraph(doc_content)
+        # 제목
+        title_p = doc.add_paragraph()
+        title_p.add_run(f"제    목: {final_title}").bold = True
+        doc.add_paragraph("-" * 60)
         
-        # 메모리 스트림에 저장하여 바로 다운로드 가능하게 처리
+        # 본문
+        doc.add_paragraph(main_summary)
+        
+        # 끝 표시 및 명의
+        doc.add_paragraph("\n\n붙임  개인정보 보호 교육 계획서 1부.  끝.")
+        
+        footer_p = doc.add_paragraph(f"\n\n{sign_off}")
+        footer_p.alignment = 2 # 우측 정렬
+        
+        # 메모리 다운로드 처리
         bio = io.BytesIO()
         doc.save(bio)
         bio.seek(0)
         
-        st.success("보고서 문서가 성공적으로 생성되었습니다!")
+        st.success("행정 공문서 초안 작성이 완료되었습니다!")
         st.download_button(
-            label="📄 생성된 Word 파일 다운로드",
+            label="📥 공문서(.docx) 다운로드",
             data=bio,
-            file_name=f"{doc_title}.docx",
+            file_name=f"{title_keyword}_공문초안.docx",
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         )
 
 # ----------------------------------------------------
-# 📧 대량 이메일 발송 기능
+# 💰 기능 2: 예산 사용 현황 모니터링 (차트)
 # ----------------------------------------------------
-elif choice == "📧 대량 이메일 발송":
-    st.subheader("📧 업무 안내 메일 자동 발송기")
+elif choice == "💰 예산 사용 현황":
+    st.subheader("💰 분기별 예산 집행 및 사용 현황")
     
-    st.warning("⚠️ 메일을 실제로 발송하려면 SMTP 설정(보안 비밀번호 등)이 필요합니다.")
-    
-    # SMTP 서버 설정 입력창
-    with st.expander("⚙️ SMTP 서버 설정 (발신 메일 서버)"):
-        smtp_server = st.text_input("SMTP 서버 주소", "://gmail.com")
-        smtp_port = st.number_input("SMTP 포트 번호", value=587)
-        sender_email = st.text_input("발신 이메일 주소", "example@gmail.com")
-        sender_password = st.text_input("앱 비밀번호 (Password)", type="password")
+    # 예시 예산 데이터 구성
+    budget_data = pd.DataFrame({
+        "목항": ["인건비", "일반운영비", "여비", "사업추진비", "자산취득비"],
+        "총 예산": [50000000, 20000000, 5000000, 15000000, 10000000],
+        "집행 금액": [35000000, 12000000, 4200000, 8500000, 2000000]
+    })
+    budget_data["잔여 예산"] = budget_data["총 예산"] - budget_data["집행 금액"]
+    budget_data["집행률(%)"] = (budget_data["집행 금액"] / budget_data["총 예산"] * 100).round(1)
 
-    # 메일 내용 입력창
-    st.write("### ✉️ 이메일 작성")
-    mail_title = st.text_input("메일 제목", "[안내] 행정 자료 제출 요청의 건")
-    receiver_list = st.text_area("수신자 리스트 (쉼표로 구분)", "user1@test.com, user2@test.com")
-    mail_content = st.text_area("메일 본문", "안녕하세요, 행정지원팀입니다.\n요청드린 자료를 금주 금요일까지 제출해 주시기 바랍니다.")
+    # 데이터 프레임 보여주기
+    st.write("### 📊 목별 예산 명세표")
+    st.dataframe(budget_data.style.format({
+        "총 예산": "{:,}원", "집행 금액": "{:,}원", "잔여 예산": "{:,}원", "집행률(%)": "{}%"
+    }))
     
-    if st.button("🚀 이메일 일괄 발송"):
-        receivers = [r.strip() for r in receiver_list.split(",") if r.strip()]
-        
-        if not sender_email or not sender_password:
-            st.error("발신자 이메일과 비밀번호를 입력해 주세요.")
-        elif not receivers:
-            st.error("수신자 이메일을 하나 이상 입력해 주세요.")
+    # Plotly 시각화 차트
+    st.write("### 📊 예산 집행 비율 시각화")
+    fig = px.bar(budget_data, x="목항", y=["집행 금액", "잔여 예산"], 
+                 title="목목별 예산 집행 vs 잔여 현황",
+                 barmode="stack",
+                 labels={"value": "금액 (원)", "variable": "구분"})
+    st.plotly_chart(fig, use_container_width=True)
+
+# ----------------------------------------------------
+# 📈 기능 3: 업무 진행률 표시
+# ----------------------------------------------------
+elif choice == "📈 업무 진행률 현황":
+    st.subheader("📈 부서 핵심 과제 업무 진행률")
+    
+    # 세부 과제 리스트와 기본 진행률 설정
+    tasks = {
+        "1. 하반기 보안 정기 감사": 85,
+        "2. 청사 시설물 안전 보수 작업": 40,
+        "3. 지자체 합동 행정 혁신 평가 준비": 100,
+        "4. 신임 공직자 직무 교육 프로그래밍": 15
+    }
+    
+    st.write("각 행정 업무의 현재 진척 상황입니다.")
+    
+    for task_name, progress_val in tasks.items():
+        col_t, col_p = st.columns([3, 7])
+        with col_t:
+            st.write(f"**{task_name}**")
+        with col_p:
+            # 프로그레스 바 표시
+            st.progress(progress_val / 100)
+            if progress_val == 100:
+                st.caption(f"✅ 완료 (100%)")
+            else:
+                st.caption(f"⏳ 진행 중 ({progress_val}%)")
+        st.divider()
+
+# ----------------------------------------------------
+# 📁 기능 4: 민원 종류 자동 분류 (AI/규칙 기반)
+# ----------------------------------------------------
+elif choice == "📁 민원 종류 자동 분류":
+    st.subheader("📁 접수 민원 내용 자동 카테고리 분류기")
+    st.write("접수된 민원 텍스트의 키워드를 분석하여 소관 부서 및 민원 종류를 자동 식별합니다.")
+    
+    complaint_text = st.text_area(
+        "민원 내용을 입력하거나 복사해 넣으세요.",
+        placeholder="예: 집 앞 도로에 불법 주차된 차량 때문에 출근길 통행이 너무 어렵습니다. 단속 좀 해주세요."
+    )
+    
+    if st.button("🔍 민원 유형 분류하기"):
+        if not complaint_text.strip():
+            st.warning("민원 내용을 입력해 주세요.")
         else:
-            success_count = 0
-            progress_bar = st.progress(0)
+            # 키워드 기반 분류 매핑 알고리즘
+            category = "기타 일반 행정 민원"
+            assigned_dept = "종합민원실"
+            badge_color = "blue"
             
-            try:
-                # SMTP 연결 테스트 및 발송 로직 (실제 운영 시 주석 해제하여 사용)
-                # server = smtplib.SMTP(smtp_server, smtp_port)
-                # server.starttls()
-                # server.login(sender_email, sender_password)
+            if any(k in complaint_text for k in ["주차", "불법주차", "도로", "신호등", "교통", "버스"]):
+                category = "교통 및 도로 민원"
+                assigned_dept = "교통지도과 / 건설과"
+                badge_color = "🔴"
+            elif any(k in complaint_text for k in ["쓰레기", "악취", "소음", "공사현장", "매연", "폐기물"]):
+                category = "환경 및 소음 민원"
+                assigned_dept = "환경위생과"
+                badge_color = "🟢"
+            elif any(k in complaint_text for k in ["세금", "재산세", "고지서", "환급", "취득세"]):
+                category = "세무 및 재산 민원"
+                assigned_dept = "세무과"
+                badge_color = "🟡"
+            elif any(k in complaint_text for k in ["보조금", "지원금", "기초생활", "복지", "아동", "노인"]):
+                category = "복지 및 보건 민원"
+                assigned_dept = "사회복지과 / 보건소"
+                badge_color = "🟣"
                 
-                for idx, r_email in enumerate(receivers):
-                    # msg = MIMEMultipart()
-                    # msg['From'] = sender_email
-                    # msg['To'] = r_email
-                    # msg['Subject'] = mail_title
-                    # msg.attach(MIMEText(mail_content, 'plain'))
-                    # server.sendmail(sender_email, r_email, msg.as_string())
-                    
-                    success_count += 1
-                    progress_bar.progress((idx + 1) / len(receivers))
+            # 결과 출력
+            st.success("민원 분석 및 자동 분류가 완료되었습니다.")
+            
+            c1, c2 = st.columns(2)
+            with c1:
+                st.metric(label="분류된 민원 유형", value=f"{badge_color} {category}")
+            with c2:
+                st.metric(label="지정 소관 부서", value=assigned_dept)
                 
-                # server.quit()
-                st.success(f"🎉 총 {success_count}명의 담당자에게 메일 발송 시뮬레이션 완료! (실제 발송은 코드 내 SMTP 주석을 해제해 주세요)")
-                
-            except Exception as e:
-                st.error(f"메일 발송 중 오류 발생: {e}")
+            st.write("---")
+            st.write("**[접수 분석 로그]**")
+            st.code(f"접수 일시: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n내용 요약: {complaint_text[:30]}...\n시스템 판단: 담당 부서 이관 안내 자동 문자 발송 대기 상태.")
 
