@@ -219,4 +219,3 @@ elif menu == "⚙️ 설정":
         st.write("- **버전:** v1.0.0")
         st.write("- **개발 프레임워크:** Python / Streamlit")
         st.write("- **배포 방식:** GitHub + Streamlit Community Cloud")
-
