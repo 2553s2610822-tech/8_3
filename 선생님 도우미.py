@@ -1,249 +1,385 @@
 import streamlit as st
-from datetime import datetime, date
+import pandas as pd
+from datetime import datetime, date, time
 
-# -------------------------------------------------------------------
-# 0. 페이지 기본 설정 및 세션 초기화
-# -------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# 1. 페이지 기본 설정 및 스타일 지정
+# -----------------------------------------------------------------------------
 st.set_page_config(
-    page_title="선생님 업무 도우미 AI",
-    page_icon="🏫",
-    layout="wide"
+    page_title="스마트 워크스페이스 Dashboard",
+    page_icon="💼",
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-# 데이터 공유용 세션 상태 초기화
-if "user_info" not in st.session_state:
-    st.session_state.user_info = {
-        "name": "홍길동",
-        "school": "행복초등학교",
-        "subject": "초등담임/수학",
-        "email_notif": True,
-        "push_notif": False
+# Custom CSS로 깔끔한 디자인 적용
+st.markdown("""
+<style>
+    .stMetric {
+        background-color: #f8f9fa;
+        padding: 15px;
+        border-radius: 10px;
+        border: 1px solid #e9ecef;
+    }
+    .status-badge {
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+        font-weight: bold;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# -----------------------------------------------------------------------------
+# 2. 세션 상태(Session State) 초기화 (데이터 보존용)
+# -----------------------------------------------------------------------------
+if 'user_profile' not in st.session_state:
+    st.session_state.user_profile = {
+        'name': '홍길동',
+        'dept': '디지털혁신팀',
+        'email': 'hong@example.com',
+        'noti_email': True,
+        'noti_sound': False
     }
 
-if "todos" not in st.session_state:
+if 'schedules' not in st.session_state:
+    st.session_state.schedules = [
+        {"id": 1, "time": "09:30", "title": "주간 팀 스크럼 회의", "location": "회의실 A", "status": "진행예정"},
+        {"id": 2, "time": "14:00", "title": "클라이언트 Q3 프로젝트 리뷰", "location": "온라인 (Zoom)", "status": "진행예정"},
+        {"id": 3, "time": "16:30", "title": "신규 기능 서비스 데모 시연", "location": "대회의실", "status": "진행예정"},
+    ]
+
+if 'todos' not in st.session_state:
     st.session_state.todos = [
-        {"task": "수학 수행평가 채점하기", "done": False, "due": str(date.today())},
-        {"task": "학부모 가정통신문 발송", "done": True, "due": str(date.today())}
+        {"id": 1, "task": "주간 보고서 작성 및 결재", "category": "업무", "priority": "높음", "done": False},
+        {"id": 2, "task": "스프린트 백로그 정제", "category": "기획", "priority": "보통", "done": True},
+        {"id": 3, "task": "코드 리뷰 참여 (PR #42)", "category": "개발", "priority": "높음", "done": False},
     ]
 
-if "events" not in st.session_state:
-    st.session_state.events = [
-        {"time": "09:00 - 09:40", "title": "1교시: 3학년 1반 수학"},
-        {"time": "10:00 - 10:40", "title": "2교시: 동아리 활동"},
-        {"time": "14:00 - 15:00", "title": "교직원 협의회"}
-    ]
-
-if "notifications" not in st.session_state:
+if 'notifications' not in st.session_state:
     st.session_state.notifications = [
-        {"type": "공지", "content": "내일 교내 소방훈련 실시 안내", "date": "2026-10-16"},
-        {"type": "마감", "content": "생활기록부 1차 입력 마감 D-3", "date": "2026-10-16"}
+        {"id": 1, "type": "일정", "message": "30분 뒤 '주간 팀 스크럼 회의'가 시작됩니다.", "timestamp": "09:00", "read": False},
+        {"id": 2, "type": "할일", "message": "마감 임박: '주간 보고서 작성' 할 일이 남아있습니다.", "timestamp": "10:15", "read": False},
+        {"id": 3, "type": "시스템", "message": "새로운 대시보드 업데이트가 반영되었습니다.", "timestamp": "08:30", "read": True},
     ]
 
-# -------------------------------------------------------------------
-# 1. 각 기능별 페이지 함수 (각 페이지 진입시에만 해당 제목 출력)
-# -------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# 3. 사이드바 (메뉴 이동 및 사용자 정보)
+# -----------------------------------------------------------------------------
+with st.sidebar:
+    st.title("💼 Smart Workspace")
+    
+    # 사용자 프로필 요약 표시
+    st.caption(f"👤 {st.session_state.user_profile['name']} ({st.session_state.user_profile['dept']})")
+    
+    st.divider()
+    
+    # 사이드바 메뉴 선택
+    menu = st.radio(
+        "📌 메뉴 선택",
+        ["오늘의 일정", "할 일 목록", "통합 검색", "업무 알림", "설정"],
+        index=0
+    )
+    
+    st.divider()
+    
+    # 미읽은 알림 배지 표시
+    unread_count = sum(1 for n in st.session_state.notifications if not n['read'])
+    if unread_count > 0:
+        st.info(f"🔔 읽지 않은 알림이 **{unread_count}개** 있습니다.")
+    else:
+        st.success("✅ 모든 알림을 확인했습니다.")
 
-def page_schedule():
-    # '오늘의 일정' 기능에 진입했을 때만 노출되는 타이틀
-    st.title("📅 오늘의 일정")
-    st.subheader(f"오늘 날짜: {datetime.now().strftime('%Y년 %m월 %d일')}")
+# -----------------------------------------------------------------------------
+# 4. 페이지별 구현
+# -----------------------------------------------------------------------------
+
+# ----------------------------------------------------
+# PAGE 1: 오늘의 일정
+# ----------------------------------------------------
+if menu == "오늘의 일정":
+    st.header("📅 오늘의 일정")
+    st.write(f"오늘 날짜: **{date.today().strftime('%Y년 %m월 %d일')}**")
     
-    col1, col2 = st.columns([2, 1])
-    
+    # 상단 요약 지표
+    col1, col2, col3 = st.columns(3)
     with col1:
-        st.write("### 시간표 및 일정")
-        if not st.session_state.events:
-            st.info("등록된 일정이 없습니다.")
-        for idx, event in enumerate(st.session_state.events):
-            with st.expander(f"📌 {event['time']} - {event['title']}", expanded=True):
-                st.write(f"일정 내용: {event['title']}")
-                if st.button("일정 삭제", key=f"del_evt_{idx}"):
-                    st.session_state.events.pop(idx)
-                    st.rerun()
-
+        st.metric("총 일정 수", f"{len(st.session_state.schedules)}개")
     with col2:
-        st.write("### 새 일정 추가")
-        with st.form("add_event_form"):
-            evt_time = st.text_input("시간 (예: 11:00 - 11:40)")
-            evt_title = st.text_input("일정 내용")
-            submit = st.form_submit_button("일정 저장")
+        completed_sch = sum(1 for s in st.session_state.schedules if s['status'] == '완료')
+        st.metric("완료된 일정", f"{completed_sch}개")
+    with col3:
+        st.metric("남은 일정", f"{len(st.session_state.schedules) - completed_sch}개")
+        
+    st.divider()
+    
+    # 일정 추가 폼
+    with st.expander("➕ 새 일정 추가하기"):
+        with st.form("add_schedule_form", clear_on_submit=True):
+            sch_time = st.time_input("시간", value=time(9, 0))
+            sch_title = st.text_input("일정 제목", placeholder="예: 주간 회의")
+            sch_location = st.text_input("장소", placeholder="예: 회의실 B 또는 Zoom")
             
-            if submit and evt_time and evt_title:
-                st.session_state.events.append({"time": evt_time, "title": evt_title})
-                st.success("새 일정이 추가되었습니다.")
+            submitted = st.form_submit_button("일정 추가")
+            if submitted:
+                if sch_title.strip():
+                    new_id = max([s['id'] for s in st.session_state.schedules], default=0) + 1
+                    st.session_state.schedules.append({
+                        "id": new_id,
+                        "time": sch_time.strftime("%H:%M"),
+                        "title": sch_title,
+                        "location": sch_location if sch_location else "미정",
+                        "status": "진행예정"
+                    })
+                    st.success("일정이 추가되었습니다!")
+                    st.rerun()
+                else:
+                    st.warning("일정 제목을 입력해주세요.")
+
+    # 일정 목록 출력 및 상태 변경/삭제
+    st.subheader("📋 일정 목록")
+    if not st.session_state.schedules:
+        st.info("등록된 일정이 없습니다.")
+    else:
+        # 시간순 정렬
+        sorted_schedules = sorted(st.session_state.schedules, key=lambda x: x['time'])
+        for idx, sch in enumerate(sorted_schedules):
+            col_time, col_info, col_status, col_action = st.columns([1.5, 4, 2, 1.5])
+            
+            with col_time:
+                st.markdown(f"🕒 **{sch['time']}**")
+            with col_info:
+                st.markdown(f"**{sch['title']}**")
+                st.caption(f"📍 {sch['location']}")
+            with col_status:
+                status_options = ["진행예정", "진행중", "완료"]
+                new_status = st.selectbox(
+                    "상태", 
+                    status_options, 
+                    index=status_options.index(sch['status']),
+                    key=f"sch_status_{sch['id']}",
+                    label_visibility="collapsed"
+                )
+                if new_status != sch['status']:
+                    sch['status'] = new_status
+                    st.rerun()
+            with col_action:
+                if st.button("삭제", key=f"del_sch_{sch['id']}"):
+                    st.session_state.schedules = [s for s in st.session_state.schedules if s['id'] != sch['id']]
+                    st.rerun()
+            st.divider()
+
+# ----------------------------------------------------
+# PAGE 2: 할 일 목록
+# ----------------------------------------------------
+elif menu == "할 일 목록":
+    st.header("✅ 할 일 목록 (To-Do List)")
+    
+    # 새 할 일 추가
+    with st.expander("➕ 새 할 일 추가하기", expanded=True):
+        col_in1, col_in2, col_in3 = st.columns([3, 1.5, 1.5])
+        with col_in1:
+            task_text = st.text_input("할 일 내용을 입력하세요", key="new_todo_text")
+        with col_in2:
+            task_cat = st.selectbox("카테고리", ["업무", "기획", "개발", "개인"], key="new_todo_cat")
+        with col_in3:
+            task_pri = st.selectbox("우선순위", ["높음", "보통", "낮음"], key="new_todo_pri")
+            
+        if st.button("할 일 추가", use_container_width=True):
+            if task_text.strip():
+                new_id = max([t['id'] for t in st.session_state.todos], default=0) + 1
+                st.session_state.todos.append({
+                    "id": new_id,
+                    "task": task_text,
+                    "category": task_cat,
+                    "priority": task_pri,
+                    "done": False
+                })
+                st.success("새 할 일이 추가되었습니다!")
                 st.rerun()
-
-def page_lesson_ai():
-    st.title("📚 수업준비 AI")
-    st.caption("AI를 활용해 학습 지도안, 퀴즈, 수업 자료를 빠르게 생성합니다.")
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        grade = st.selectbox("학년/학기", ["초등 3학년 1학기", "초등 4학년 1학기", "중등 1학년", "고등 1학년"])
-        subject = st.text_input("과목/단원", "수학 - 분수의 계산")
-    with col2:
-        topic = st.text_input("수업 주제", "분수의 개념과 실생활 활용 예시")
-        activity_type = st.multiselect("포함할 활동", ["개념 설명", "그룹 토의", "퀴즈/학습지", "실험/실습"], default=["개념 설명", "퀴즈/학습지"])
-
-    if st.button("✨ 수업 자료 AI 생성하기", type="primary"):
-        st.info("AI가 수업 지도안 및 평가 요소를 생성 중입니다...")
-        st.markdown(f"""
-        ### 📚 [{subject}] {topic} 수업안
-        - **대상:** {grade}
-        - **수업 목표:** {topic}의 기본 원리를 이해하고 문제를 해결할 수 있다.
-        
-        #### 1. 도입 (10분)
-        - 흥미 유발: 피자와 빵을 나누는 실생활 상황 제시
-        
-        #### 2. 전개 (25분)
-        - 핵심 개념 설명 및 구체물 활용 활동
-        - 그룹별 분수 모형 조작 실습
-        
-        #### 3. 정리 및 평가 (10분)
-        - AI가 추천하는 오늘의 퀴즈 3문항 풀이
-        """)
-
-def page_time_ai():
-    st.title("⏳ 효율적 시간 배분 AI")
-    st.caption("선생님의 업무 우선순위와 일정을 분석하여 최적의 시간표를 추천합니다.")
-    
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        st.subheader("업무 우선순위 설정")
-        urgent_tasks = st.text_area("오늘 꼭 처리해야 할 중요 업무", "1. 생활기록부 작성\n2. 수학 수업 준비\n3. 학부모 상담 전화")
-        available_hours = st.slider("오늘 확보 가능한 비수업 시간 (시간)", 1, 8, 3)
-        
-        if st.button("📊 시간 배분 AI 분석 실행"):
-            st.session_state.time_analyzed = True
-
-    with col2:
-        st.subheader("AI 추천 시간 배분 스케줄")
-        if st.session_state.get("time_analyzed"):
-            st.success("AI 분석 완료: 집중도가 높은 오전에 중요 업무를 배치했습니다.")
-            st.markdown("""
-            - **09:00 - 10:30 (집중 시간 90분):** 📝 `생활기록부 작성`
-            - **10:40 - 11:30 (수업 준비 50분):** 📚 `수업준비 AI 활용`
-            - **13:30 - 14:30 (행정/소통 60분):** 📞 `학부모 상담 및 공문 확인`
-            - **15:00 - 16:00 (여유 시간 60분):** ☕ `기타 할 일 정돈`
-            """)
-        else:
-            st.info("왼쪽에서 업무를 입력하고 분석 버튼을 눌러주세요.")
-
-def page_admin_robot():
-    st.title("🤖 행정업무 로봇")
-    st.caption("반복되는 교무 행정 업무, 공문서 요약, 가정통신문 초안 작성을 자동화합니다.")
-    
-    task_type = st.tabs(["✉️ 가정통신문 생성", "📄 공문서 요약 로봇", "📊 학생 명단 정리"])
-    
-    with task_type[0]:
-        st.subheader("가정통신문 초안 자동 작성")
-        title = st.text_input("안내 주제", "봄 현장체험학습 안내")
-        if st.button("가정통신문 작성 시작"):
-            st.text_area("AI 생성 결과", 
-f"""[가정통신문] {title}
-
-학부모님 안녕하십니까?
-{title}에 대해 아래와 같이 안내해 드리오니 확인 부탁드립니다.
-
-1. 일시: 2026년 5월 10일(금)
-2. 장소: 국립중앙박물관
-3. 준비물: 개인 도시락, 개인 위생용품
-4. 참가비: 무료""", height=200)
-
-    with task_type[1]:
-        st.subheader("긴 공문서 핵심 요약")
-        doc_text = st.text_area("공문서 텍스트 붙여넣기", placeholder="내용을 입력하세요.")
-        if st.button("공문 요약하기") and doc_text:
-            st.warning("📌 [요약 결과]\n1. 제출 마감: 금요일 17:00까지\n2. 제출 서류: 붙임1 양식 엑셀 파일")
-
-    with task_type[2]:
-        st.subheader("학급 데이터 자동 정리")
-        st.file_uploader("학생 데이터 파일 업로드 (xlsx, csv)", type=["xlsx", "csv"])
-
-def page_todo():
-    st.title("☑️ 할 일 목록")
-    
-    col_input, col_date, col_btn = st.columns([3, 1.5, 1])
-    with col_input:
-        new_task = st.text_input("새로운 업무 등록", placeholder="예: 공문서 처리하기", label_visibility="collapsed")
-    with col_date:
-        due_date = st.date_input("마감일", date.today(), label_visibility="collapsed")
-    with col_btn:
-        if st.button("추가", use_container_width=True):
-            if new_task:
-                st.session_state.todos.append({"task": new_task, "done": False, "due": str(due_date)})
-                st.rerun()
+            else:
+                st.warning("할 일 내용을 입력해주세요.")
 
     st.divider()
+    
+    # 진행 상황 프로그레스 바
+    if st.session_state.todos:
+        total = len(st.session_state.todos)
+        dones = sum(1 for t in st.session_state.todos if t['done'])
+        progress = dones / total
+        st.write(f"**진행률: {int(progress * 100)}%** ({dones}/{total} 완료)")
+        st.progress(progress)
 
-    for idx, todo in enumerate(st.session_state.todos):
-        col_chk, col_text, col_due, col_del = st.columns([0.5, 4, 1.5, 1])
-        is_done = col_chk.checkbox("", value=todo["done"], key=f"todo_chk_{idx}")
-        if is_done != todo["done"]:
-            st.session_state.todos[idx]["done"] = is_done
+    st.subheader("📝 Task List")
+    
+    if not st.session_state.todos:
+        st.info("등록된 할 일이 없습니다.")
+    else:
+        for todo in st.session_state.todos:
+            c1, c2, c3, c4, c5 = st.columns([0.5, 4, 1.5, 1.5, 1])
+            
+            with c1:
+                is_done = st.checkbox("", value=todo['done'], key=f"todo_check_{todo['id']}")
+                if is_done != todo['done']:
+                    todo['done'] = is_done
+                    st.rerun()
+            
+            with c2:
+                if todo['done']:
+                    st.markdown(f"~~{todo['task']}~~")
+                else:
+                    st.markdown(f"**{todo['task']}**")
+            
+            with c3:
+                st.caption(f"📁 {todo['category']}")
+                
+            with c4:
+                color = "🔴" if todo['priority'] == "높음" else ("🟡" if todo['priority'] == "보통" else "🟢")
+                st.caption(f"{color} {todo['priority']}")
+                
+            with c5:
+                if st.button("삭제", key=f"del_todo_{todo['id']}"):
+                    st.session_state.todos = [t for t in st.session_state.todos if t['id'] != todo['id']]
+                    st.rerun()
+
+# ----------------------------------------------------
+# PAGE 3: 통합 검색
+# ----------------------------------------------------
+elif menu == "통합 검색":
+    st.header("🔍 통합 검색")
+    st.caption("일정, 할 일, 알림 데이터를 한 번에 검색합니다.")
+    
+    search_query = st.text_input("검색어를 입력하세요", placeholder="예: 회의, 보고서, 프로젝트...").strip()
+    
+    if search_query:
+        st.subheader(f"'{search_query}' 검색 결과")
+        
+        # 1. 일정 검색 결과
+        matched_schedules = [s for s in st.session_state.schedules if search_query.lower() in s['title'].lower() or search_query.lower() in s['location'].lower()]
+        
+        # 2. 할 일 검색 결과
+        matched_todos = [t for t in st.session_state.todos if search_query.lower() in t['task'].lower() or search_query.lower() in t['category'].lower()]
+        
+        # 3. 알림 검색 결과
+        matched_notis = [n for n in st.session_state.notifications if search_query.lower() in n['message'].lower()]
+        
+        total_results = len(matched_schedules) + len(matched_todos) + len(matched_notis)
+        
+        if total_results == 0:
+            st.warning("검색 결과가 없습니다.")
+        else:
+            st.success(f"총 {total_results}건의 항목을 찾았습니다.")
+            
+            tab1, tab2, tab3 = st.tabs([f"📅 일정 ({len(matched_schedules)})", f"✅ 할 일 ({len(matched_todos)})", f"🔔 알림 ({len(matched_notis)})"])
+            
+            with tab1:
+                if matched_schedules:
+                    for s in matched_schedules:
+                        st.write(f"- **[{s['time']}]** {s['title']} *(장소: {s['location']} | 상태: {s['status']})*")
+                else:
+                    st.write("일치하는 일정이 없습니다.")
+                    
+            with tab2:
+                if matched_todos:
+                    for t in matched_todos:
+                        status_str = "완료" if t['done'] else "미완료"
+                        st.write(f"- **[{t['category']}]** {t['task']} *(우선순위: {t['priority']} | 상태: {status_str})*")
+                else:
+                    st.write("일치하는 할 일이 없습니다.")
+                    
+            with tab3:
+                if matched_notis:
+                    for n in matched_notis:
+                        st.write(f"- **[{n['type']}]** {n['message']} *(시간: {n['timestamp']})*")
+                else:
+                    st.write("일치하는 알림이 없습니다.")
+    else:
+        st.info("상단 입력창에 검색어를 입력하시면 관련 항목들을 바로 찾아드립니다.")
+
+# ----------------------------------------------------
+# PAGE 4: 업무 알림
+# ----------------------------------------------------
+elif menu == "업무 알림":
+    st.header("🔔 업무 알림 센터")
+    
+    col_a, col_b = st.columns([4, 1])
+    with col_a:
+        st.caption("시스템 및 주요 업무 관련 알림을 확인할 수 있습니다.")
+    with col_b:
+        if st.button("모두 읽음 처리"):
+            for n in st.session_state.notifications:
+                n['read'] = True
             st.rerun()
             
-        task_text = f"~~{todo['task']}~~" if todo["done"] else todo["task"]
-        col_text.markdown(task_text)
-        col_due.caption(f"📅 {todo['due']}")
+    st.divider()
+    
+    if not st.session_state.notifications:
+        st.info("새로운 알림이 없습니다.")
+    else:
+        for noti in st.session_state.notifications:
+            card_color = "#f0f2f6" if noti['read'] else "#e8f4f8"
+            border_color = "#ccc" if noti['read'] else "#0066cc"
+            
+            st.markdown(
+                f"""
+                <div style="background-color: {card_color}; padding: 12px; border-radius: 8px; border-left: 5px solid {border_color}; margin-bottom: 10px;">
+                    <span style="font-size: 12px; color: #666;">[{noti['timestamp']}] <b>{noti['type']}</b></span><br/>
+                    <span style="font-size: 15px; font-weight: {'normal' if noti['read'] else 'bold'};">{noti['message']}</span>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+            
+            col_btn1, col_btn2 = st.columns([1, 8])
+            with col_btn1:
+                if not noti['read']:
+                    if st.button("읽음", key=f"read_noti_{noti['id']}"):
+                        noti['read'] = True
+                        st.rerun()
+            st.write("")
+
+# ----------------------------------------------------
+# PAGE 5: 설정
+# ----------------------------------------------------
+elif menu == "설정":
+    st.header("⚙️ 앱 설정")
+    
+    tab_user, tab_noti, tab_info = st.tabs(["👤 사용자 정보", "🔔 알림 설정", "ℹ️ 앱 기본 정보"])
+    
+    # 1. 사용자 정보
+    with tab_user:
+        st.subheader("사용자 프로필 수정")
+        with st.form("user_profile_form"):
+            name = st.text_input("이름", value=st.session_state.user_profile['name'])
+            dept = st.text_input("부서", value=st.session_state.user_profile['dept'])
+            email = st.text_input("이메일", value=st.session_state.user_profile['email'])
+            
+            save_user = st.form_submit_button("프로필 저장")
+            if save_user:
+                st.session_state.user_profile['name'] = name
+                st.session_state.user_profile['dept'] = dept
+                st.session_state.user_profile['email'] = email
+                st.success("프로필 정보가 수정되었습니다!")
+                st.rerun()
+
+    # 2. 알림 설정
+    with tab_noti:
+        st.subheader("알림 수신 설정")
+        noti_email = st.checkbox("이메일 알림 받기", value=st.session_state.user_profile['noti_email'])
+        noti_sound = st.checkbox("소리 알림 켜기", value=st.session_state.user_profile['noti_sound'])
         
-        if col_del.button("삭제", key=f"todo_del_{idx}"):
-            st.session_state.todos.pop(idx)
-            st.rerun()
+        if st.button("알림 설정 저장"):
+            st.session_state.user_profile['noti_email'] = noti_email
+            st.session_state.user_profile['noti_sound'] = noti_sound
+            st.success("알림 설정이 저장되었습니다.")
 
-def page_search():
-    st.title("🔍 통합 검색")
-    query = st.text_input("검색어를 입력하세요", placeholder="검색할 일정, 할 일, 알림 입력")
-    if query:
-        st.write(f"**'{query}'** 에 관한 검색 결과:")
-        found = False
-        matching_events = [e for e in st.session_state.events if query.lower() in e["title"].lower()]
-        if matching_events:
-            found = True
-            st.write("- 일정에서 발견:", matching_events)
-        matching_todos = [t for t in st.session_state.todos if query.lower() in t["task"].lower()]
-        if matching_todos:
-            found = True
-            st.write("- 할 일 목록에서 발견:", matching_todos)
-        if not found:
-            st.info("검색 결과가 없습니다.")
-
-def page_notification():
-    st.title("🔔 업무 알림")
-    for n in st.session_state.notifications:
-        st.info(f"[{n['type']}] {n['content']} (`{n['date']}`)")
-
-def page_settings():
-    st.title("⚙️ 설정")
-    tab1, tab2 = st.tabs(["👤 사용자 정보", "🔔 알림 설정"])
-    with tab1:
-        st.text_input("선생님 이름", st.session_state.user_info["name"])
-        st.text_input("소속 학교", st.session_state.user_info["school"])
-        st.text_input("담당 과목", st.session_state.user_info["subject"])
-    with tab2:
-        st.toggle("이메일 알림 받기", st.session_state.user_info["email_notif"])
-        st.toggle("푸시 알림 받기", st.session_state.user_info["push_notif"])
-
-# -------------------------------------------------------------------
-# 2. 메인 네비게이션 등록 및 실행
-# -------------------------------------------------------------------
-
-pg = st.navigation({
-    "🤖 AI 스마트 기능": [
-        st.Page(page_lesson_ai, title="수업준비 AI", icon="📚"),
-        st.Page(page_time_ai, title="효율적 시간 배분 AI", icon="⏳"),
-        st.Page(page_admin_robot, title="행정업무 로봇", icon="🤖"),
-    ],
-    "📋 교무 업무 관리": [
-        st.Page(page_schedule, title="오늘의 일정", icon="📅"),
-        st.Page(page_todo, title="할 일 목록", icon="☑️"),
-        st.Page(page_search, title="통합 검색", icon="🔍"),
-        st.Page(page_notification, title="업무 알림", icon="🔔"),
-    ],
-    "⚙️ 시스템": [
-        st.Page(page_settings, title="설정", icon="⚙️"),
-    ]
-})
-
-# 선택된 특정 페이지 1개만 실행 (독립 화면 보장)
-pg.run()    
+    # 3. 앱 기본 정보
+    with tab_info:
+        st.subheader("애플리케이션 정보")
+        st.markdown("""
+        - **앱 이름**: Smart Workspace Dashboard
+        - **버전**: v1.0.0
+        - **프레임워크**: Streamlit
+        - **배포 환경**: Streamlit Community Cloud
+        - **설명**: 업무 일정, 할 일, 검색 및 알림을 통합 관리하는 개인 대시보드 앱입니다.
+        """)
