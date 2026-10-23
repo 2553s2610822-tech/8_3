@@ -1,324 +1,201 @@
-from dataclasses import dataclass
-from datetime import datetime, timedelta
-from typing import Optional
+import streamlit as st
+from datetime import date, time, datetime, timedelta
 
+st.set_page_config(page_title="시간 설계실", page_icon="🗓️", layout="wide")
 
-@dataclass
-class Task:
-    name: str
-    duration: int
-    importance: int
-    deadline: Optional[datetime] = None
+st.title("🗓️ 시간 설계실")
+st.caption("중요한 일은 놓치지 않고, 쉴 시간은 지키는 하루 계획")
 
+st.markdown("""
+<style>
+.block-container {max-width: 1050px; padding-top: 2rem; padding-bottom: 3rem;}
+div[data-testid="stMetric"] {background: rgba(120,120,120,.07); padding: 14px; border-radius: 12px;}
+.plan-card {border: 1px solid rgba(128,128,128,.25); border-radius: 12px; padding: 14px; margin: 8px 0;}
+.small-note {color: #777; font-size: .9rem;}
+</style>
+""", unsafe_allow_html=True)
 
-@dataclass
-class Event:
-    name: str
-    start: datetime
-    end: datetime
-    kind: str = "일정"
+if "tasks" not in st.session_state:
+    st.session_state.tasks = [
+        {"name": "가장 중요한 과제", "duration": 60, "priority": 5, "due": "오늘", "note": "집중이 필요한 핵심 작업"},
+        {"name": "복습 또는 정리", "duration": 30, "priority": 3, "due": "오늘", "note": ""},
+    ]
 
+with st.sidebar:
+    st.header("⚙️ 하루 설정")
+    start = st.time_input("시작 시간", value=time(16, 0), step=timedelta(minutes=15))
+    end = st.time_input("마칠 시간", value=time(21, 30), step=timedelta(minutes=15))
+    break_min = st.number_input("일정 사이 휴식 (분)", min_value=0, max_value=60, value=10, step=5)
+    buffer_min = st.number_input("여유 시간 확보 (분)", min_value=0, max_value=240, value=30, step=10)
+    focus_limit = st.number_input("한 번에 집중할 최대 시간 (분)", min_value=25, max_value=120, value=50, step=5)
+    st.caption("팁: 시작·종료 시간은 실제로 지킬 수 있는 범위로 설정하세요.")
 
-def parse_time(day, time_text):
-    """날짜와 시각을 datetime으로 변환한다."""
-    return datetime.strptime(
-        f"{day} {time_text}", "%Y-%m-%d %H:%M"
-    )
+st.subheader("1. 사용할 수 있는 시간")
+if end <= start:
+    st.error("마치는 시간은 시작 시간보다 늦어야 합니다.")
+    st.stop()
 
+start_dt = datetime.combine(date.today(), start)
+end_dt = datetime.combine(date.today(), end)
+total_min = int((end_dt - start_dt).total_seconds() // 60)
+usable_min = max(0, total_min - int(buffer_min))
+c1, c2, c3 = st.columns(3)
+c1.metric("전체 시간", f"{total_min // 60}시간 {total_min % 60}분")
+c2.metric("미리 확보한 여유", f"{int(buffer_min)}분")
+c3.metric("일정 배정 가능", f"{usable_min}분")
 
-def get_priority(task, now, day_end):
-    """중요도, 마감 임박도, 예상 소요 시간을 고려한 점수."""
-    score = task.importance * 10
+st.subheader("2. 해야 할 일 입력")
+st.write("중요도는 1(낮음)부터 5(매우 높음)까지 선택하세요. 예상 시간은 가능한 한 현실적으로 적어 주세요.")
 
-    if task.deadline:
-        remaining = (
-            task.deadline - now
-        ).total_seconds() / 3600
+with st.form("task_form", clear_on_submit=True):
+    a, b = st.columns([2, 1])
+    new_name = a.text_input("일정 이름", placeholder="예: 수학 숙제")
+    new_duration = b.number_input("예상 시간 (분)", min_value=5, max_value=600, value=30, step=5)
+    c, d = st.columns([1, 1])
+    new_priority = c.select_slider("중요도", options=[1, 2, 3, 4, 5], value=3)
+    new_due = d.selectbox("마감", ["오늘", "내일", "이번 주", "마감 여유 있음"])
+    new_note = st.text_input("메모 (선택)", placeholder="예: 제출 전 풀이 검토 필요")
+    add = st.form_submit_button("＋ 일정 추가", use_container_width=True)
+    if add:
+        if not new_name.strip():
+            st.warning("일정 이름을 입력해 주세요.")
+        else:
+            st.session_state.tasks.append({
+                "name": new_name.strip(), "duration": int(new_duration),
+                "priority": int(new_priority), "due": new_due, "note": new_note.strip()
+            })
+            st.rerun()
 
-        if remaining <= 0:
-            score += 100       # 마감이 지났거나 임박
-        elif remaining <= 3:
-            score += 40
-        elif remaining <= 12:
-            score += 25
-        elif remaining <= 24:
-            score += 15
-        elif remaining <= 72:
-            score += 5
+if st.session_state.tasks:
+    with st.expander("입력한 일정 확인 및 삭제", expanded=True):
+        for i, task in enumerate(st.session_state.tasks):
+            cols = st.columns([3, 1, 1, 1, 1])
+            cols[0].write(f"**{task['name']}**")
+            cols[1].write(f"{task['duration']}분")
+            cols[2].write(f"중요도 {task['priority']}/5")
+            cols[3].write(task["due"])
+            if cols[4].button("삭제", key=f"del_{i}"):
+                st.session_state.tasks.pop(i)
+                st.rerun()
+else:
+    st.info("일정을 하나 이상 추가하면 시간표를 만들 수 있습니다.")
 
-    # 짧은 작업은 일정 사이에 배치하기 쉽다.
-    score += max(0, 10 - task.duration / 10)
-
-    return score
-
-
-def get_reason(task, now):
+def explanation(task, assigned, was_split):
     reasons = []
+    if task["priority"] >= 4:
+        reasons.append("중요도가 높아 우선 배정했습니다.")
+    if task["due"] == "오늘":
+        reasons.append("마감이 오늘이라 미루는 위험을 줄이도록 앞쪽에 배치했습니다.")
+    elif task["due"] == "내일":
+        reasons.append("마감이 가까워 오늘 진행 상황을 확보하도록 배치했습니다.")
+    else:
+        reasons.append("긴급도보다 전체 일정의 균형을 고려해 배치했습니다.")
+    advice = task["note"] or "시작 전 필요한 자료를 준비하고, 끝나면 완료 여부를 표시하세요."
+    if was_split:
+        advice = "작업량이 커서 집중 구간으로 나눴습니다. 각 구간 끝에 짧게 진행 상황을 확인하세요. " + advice
+    if assigned < task["duration"]:
+        advice = f"시간이 부족해 {assigned}분만 배정했습니다. 남은 {task['duration']-assigned}분은 다음 여유 시간에 이어가세요. " + advice
+    return " ".join(reasons), advice
 
-    if task.importance >= 5:
-        reasons.append("중요도가 높아 우선 배정")
-
-    if task.deadline:
-        hours = (task.deadline - now).total_seconds() / 3600
-
-        if hours <= 0:
-            reasons.append("마감 시간이 지났으므로 긴급 처리 필요")
-        elif hours <= 3:
-            reasons.append("마감이 3시간 이내로 임박")
-        elif hours <= 24:
-            reasons.append("오늘 안에 마감되는 작업")
-
-    if not reasons:
-        reasons.append("다른 일정과 충돌하지 않는 시간에 배정")
-
-    return ", ".join(reasons)
-
-
-def get_advice(task):
-    if task.importance >= 5:
-        return "집중력이 높은 시간에 처리하고 알림을 꺼두세요."
-    elif task.duration >= 120:
-        return "중간에 5~10분 휴식을 취해 집중력을 유지하세요."
-    elif task.duration <= 30:
-        return "짧은 작업을 한 번에 끝내고 완료 표시를 하세요."
-    return "작업 목표를 구체적으로 정하고 완료 후 다음 일정으로 이동하세요."
-
-
-def overlaps(start, end, event):
-    return start < event.end and end > event.start
-
-
-def find_slot(task, day_start, day_end, events, buffer_min=10):
-    """
-    기존 일정과 겹치지 않는 가장 이른 시간대를 찾는다.
-    작업 후에는 기본 10분의 전환 시간을 확보한다.
-    """
-    cursor = day_start
-    occupied = sorted(events, key=lambda e: e.start)
-
-    for event in occupied:
-        if cursor >= day_end:
-            return None
-
-        candidate_end = cursor + timedelta(minutes=task.duration)
-
-        if candidate_end <= event.start:
-            return cursor, candidate_end
-
-        if cursor < event.end:
-            cursor = event.end
-
-    candidate_end = cursor + timedelta(minutes=task.duration)
-
-    if candidate_end <= day_end:
-        return cursor, candidate_end
-
-    return None
-
-
-def build_schedule(day_start, day_end, tasks, fixed_events):
-    now = day_start
-    events = list(fixed_events)
-    scheduled = []
-    unscheduled = []
-
-    # 중요도와 마감 시간을 기준으로 우선순위를 계산한다.
-    tasks.sort(
-        key=lambda t: get_priority(t, now, day_end),
-        reverse=True
-    )
-
-    for task in tasks:
-        slot = find_slot(
-            task, day_start, day_end, events
+st.subheader("3. 시간표 만들기")
+if st.button("✨ 효율적인 시간표 생성", type="primary", use_container_width=True):
+    if not st.session_state.tasks:
+        st.warning("먼저 일정을 하나 이상 추가해 주세요.")
+    else:
+        tasks = sorted(
+            enumerate(st.session_state.tasks),
+            key=lambda x: (-x[1]["priority"],
+                           {"오늘": 0, "내일": 1, "이번 주": 2, "마감 여유 있음": 3}[x[1]["due"]],
+                           x[0])
         )
+        remaining = usable_min
+        blocks = []
+        current = start_dt
+        used_task_minutes = 0
+        for original_index, task in tasks:
+            if remaining <= 0:
+                break
+            requested = int(task["duration"])
+            assigned_total = min(requested, remaining)
+            left = assigned_total
+            first_block = True
+            while left > 0:
+                chunk = min(left, int(focus_limit))
+                # Short final chunks are allowed to avoid wasting available time.
+                block_start = current
+                block_end = current + timedelta(minutes=chunk)
+                blocks.append({
+                    "task": task, "start": block_start, "end": block_end,
+                    "minutes": chunk, "first": first_block,
+                    "assigned_total": assigned_total, "requested": requested
+                })
+                current = block_end
+                left -= chunk
+                remaining -= chunk
+                used_task_minutes += chunk
+                first_block = False
+                if left > 0 and break_min > 0 and remaining > 0:
+                    pause = min(int(break_min), remaining)
+                    blocks.append({"rest": True, "start": current,
+                                   "end": current + timedelta(minutes=pause),
+                                   "minutes": pause})
+                    current += timedelta(minutes=pause)
+                    remaining -= pause
+        st.session_state.last_plan = {
+            "blocks": blocks, "total": total_min, "buffer": int(buffer_min),
+            "start": start_dt, "end": end_dt, "focus_limit": int(focus_limit),
+            "break_min": int(break_min), "used": used_task_minutes
+        }
 
-        if slot is None:
-            unscheduled.append(task)
-            continue
+if "last_plan" in st.session_state:
+    plan = st.session_state.last_plan
+    st.subheader("오늘의 추천 시간표")
+    task_blocks = [b for b in plan["blocks"] if not b.get("rest")]
+    rest_blocks = [b for b in plan["blocks"] if b.get("rest")]
+    c1, c2, c3 = st.columns(3)
+    c1.metric("집중 시간", f"{sum(b['minutes'] for b in task_blocks)}분")
+    c2.metric("휴식 시간", f"{sum(b['minutes'] for b in rest_blocks)}분")
+    c3.metric("확보한 여유", f"{plan['buffer']}분")
+    if sum(b["minutes"] for b in task_blocks) == 0:
+        st.warning("배정 가능한 시간이 없습니다. 여유 시간을 줄이거나 하루 종료 시간을 늦춰 보세요.")
+    for block in plan["blocks"]:
+        stamp = f"{block['start'].strftime('%H:%M')}–{block['end'].strftime('%H:%M')}"
+        if block.get("rest"):
+            st.markdown(f"""<div class="plan-card">☕ <b>{stamp} · 휴식</b><br>
+            <span class="small-note">{block['minutes']}분 — 물 마시기, 가볍게 움직이기, 눈 쉬기. 쉬는 동안에는 다음 일을 미리 시작하지 않아도 됩니다.</span></div>""", unsafe_allow_html=True)
+        else:
+            task = block["task"]
+            reason, advice = explanation(task, block["assigned_total"], block["requested"] > plan["focus_limit"])
+            st.markdown(f"""<div class="plan-card">🧩 <b>{stamp} · {task['name']}</b>
+            <span style="float:right">{block['minutes']}분 · 중요도 {task['priority']}/5</span><br>
+            <span class="small-note">배정 이유: {reason}</span><br>
+            <span class="small-note">조언: {advice}</span></div>""", unsafe_allow_html=True)
 
-        start, end = slot
+    total_requested = sum(t["duration"] for t in st.session_state.tasks)
+    total_assigned = sum(b["minutes"] for b in task_blocks)
+    unallocated = max(0, total_requested - total_assigned)
+    st.markdown("#### 마무리 점검")
+    if unallocated:
+        st.warning(f"모든 일정에 필요한 시간보다 {unallocated}분이 부족합니다. 중요도가 낮거나 마감이 여유로운 일정은 다음 날로 옮기는 편이 좋습니다.")
+    if plan["buffer"] >= 30:
+        st.success("여유 시간을 따로 확보했습니다. 일정이 늦어져도 이 시간을 먼저 사용하고, 가능하면 휴식 시간은 지키세요.")
+    else:
+        st.info("여유 시간이 적습니다. 이동·준비·예상치 못한 일을 고려해 여유 시간을 30분 이상 확보하는 것을 추천합니다.")
+    st.caption("이 도구는 입력값을 바탕으로 규칙 기반 일정을 계산합니다. 실제 소요 시간은 달라질 수 있으니 계획은 유연하게 조정하세요.")
 
-        new_event = Event(
-            task.name, start, end, "할 일"
-        )
-        events.append(new_event)
-        events.sort(key=lambda e: e.start)
+    export_lines = ["오늘의 추천 시간표", ""]
+    for block in plan["blocks"]:
+        stamp = f"{block['start'].strftime('%H:%M')}–{block['end'].strftime('%H:%M')}"
+        if block.get("rest"):
+            export_lines.append(f"{stamp} | 휴식 ({block['minutes']}분)")
+        else:
+            export_lines.append(f"{stamp} | {block['task']['name']} ({block['minutes']}분, 중요도 {block['task']['priority']}/5)")
+            reason, advice = explanation(block["task"], block["assigned_total"], block["requested"] > plan["focus_limit"])
+            export_lines.append(f"  배정 이유: {reason}")
+            export_lines.append(f"  조언: {advice}")
+    st.download_button("⬇️ 시간표 텍스트 다운로드", data="\n".join(export_lines),
+                       file_name="오늘의_추천_시간표.txt", mime="text/plain",
+                       use_container_width=True)
 
-        scheduled.append({
-            "task": task,
-            "start": start,
-            "end": end,
-            "reason": get_reason(task, now),
-            "advice": get_advice(task),
-        })
-
-    return sorted(
-        scheduled, key=lambda item: item["start"]
-    ), events, unscheduled
-
-
-def print_schedule(day_start, day_end, scheduled,
-                   fixed_events, unscheduled):
-    print("\n" + "=" * 60)
-    print("          AI 맞춤형 시간 관리 결과")
-    print("=" * 60)
-
-    all_events = list(fixed_events)
-
-    for item in scheduled:
-        all_events.append(Event(
-            item["task"].name,
-            item["start"],
-            item["end"],
-            "할 일"
-        ))
-
-    all_events.sort(key=lambda e: e.start)
-
-    cursor = day_start
-    free_minutes = 0
-
-    for event in all_events:
-        if event.start > cursor:
-            gap = int((event.start - cursor).total_seconds() / 60)
-            free_minutes += gap
-
-            print(
-                f"\n[여유 시간] {cursor:%H:%M} ~ "
-                f"{event.start:%H:%M} ({gap}분)"
-            )
-
-            if gap >= 30:
-                print("  조언: 휴식이나 예상치 못한 일에 활용하세요.")
-            else:
-                print("  조언: 다음 일정 준비에 활용하세요.")
-
-        print(
-            f"\n[{event.kind}] {event.start:%H:%M} ~ "
-            f"{event.end:%H:%M} | {event.name}"
-        )
-
-        if event.kind == "고정 일정":
-            print("  이유: 이미 확정된 일정입니다.")
-
-        cursor = max(cursor, event.end)
-
-    if cursor < day_end:
-        gap = int((day_end - cursor).total_seconds() / 60)
-        free_minutes += gap
-        print(
-            f"\n[여유 시간] {cursor:%H:%M} ~ "
-            f"{day_end:%H:%M} ({gap}분)"
-        )
-        print("  조언: 남은 시간은 휴식 또는 예비 시간으로 남겨두세요.")
-
-    total_minutes = int(
-        (day_end - day_start).total_seconds() / 60
-    )
-    busy_minutes = total_minutes - free_minutes
-
-    print("\n" + "-" * 60)
-    print(f"전체 사용 가능 시간: {total_minutes}분")
-    print(f"배정된 일정 및 작업: {busy_minutes}분")
-    print(f"확보된 여유 시간: {free_minutes}분")
-    print(
-        f"여유 시간 비율: "
-        f"{free_minutes / total_minutes * 100:.1f}%"
-        if total_minutes > 0 else "여유 시간 비율: 계산 불가"
-    )
-
-    if unscheduled:
-        print("\n[배정하지 못한 작업]")
-        for task in unscheduled:
-            print(
-                f"- {task.name} ({task.duration}분, "
-                f"중요도 {task.importance}/5)"
-            )
-        print("조언: 사용 시간을 늘리거나 작업을 나누고,")
-        print("      중요도가 낮은 작업의 일정을 조정하세요.")
-
-    print("=" * 60)
-
-
-def main():
-    print("AI 시간 관리 시스템을 시작합니다.")
-
-    day = input("날짜 (YYYY-MM-DD): ").strip()
-    start_text = input("하루 시작 시간 (HH:MM): ").strip()
-    end_text = input("하루 종료 시간 (HH:MM): ").strip()
-
-    day_start = parse_time(day, start_text)
-    day_end = parse_time(day, end_text)
-
-    if day_end <= day_start:
-        print("오류: 종료 시간은 시작 시간보다 늦어야 합니다.")
-        return
-
-    tasks = []
-    fixed_events = []
-
-    task_count = int(input("처리할 작업 수: "))
-
-    for i in range(task_count):
-        print(f"\n작업 {i + 1}")
-        name = input("작업 이름: ").strip()
-        duration = int(input("예상 소요 시간(분): "))
-        importance = int(input("중요도(1~5): "))
-
-        deadline_text = input(
-            "마감 시간 (HH:MM, 없으면 Enter): "
-        ).strip()
-
-        deadline = (
-            parse_time(day, deadline_text)
-            if deadline_text else None
-        )
-
-        if duration <= 0 or not 1 <= importance <= 5:
-            print("잘못된 입력입니다. 이 작업은 건너뜁니다.")
-            continue
-
-        tasks.append(Task(
-            name, duration, importance, deadline
-        ))
-
-    fixed_count = int(input("\n고정 일정 수: "))
-
-    for i in range(fixed_count):
-        print(f"\n고정 일정 {i + 1}")
-        name = input("일정 이름: ").strip()
-        start = parse_time(
-            day, input("시작 시간 (HH:MM): ").strip()
-        )
-        end = parse_time(
-            day, input("종료 시간 (HH:MM): ").strip()
-        )
-
-        if start >= end or start < day_start or end > day_end:
-            print("시간 범위가 잘못되어 이 일정을 건너뜁니다.")
-            continue
-
-        if any(overlaps(start, end, event)
-               for event in fixed_events):
-            print("기존 고정 일정과 겹쳐 이 일정을 건너뜁니다.")
-            continue
-
-        fixed_events.append(Event(
-            name, start, end, "고정 일정"
-        ))
-
-    # 작업은 현재 고정 일정과 겹치지 않는 시간에 배정한다.
-    scheduled, _, unscheduled = build_schedule(
-        day_start, day_end, tasks, fixed_events
-    )
-
-    print_schedule(
-        day_start, day_end, scheduled,
-        fixed_events, unscheduled
-    )
-
-
-if __name__ == "__main__":
-    main()
-
+st.divider()
+st.caption("시간 설계실 · 현실적인 계획, 충분한 휴식, 지속 가능한 하루")
