@@ -1,139 +1,102 @@
 
 import streamlit as st
 import pandas as pd
-from datetime import date, timedelta
+from datetime import date
 
+# =====================================
+# 1. 기본 설정
+# =====================================
 st.set_page_config(
     page_title="행정업무 로봇",
     page_icon="🤖",
     layout="wide"
 )
 
-# ==============================
-# 1. 데이터 초기화
-# ==============================
-defaults = {
-    "documents": [],
-    "tasks": [],
-    "expenses": [],
-    "complaints": [],
-    "total_budget": 1_000_000_000,
-    "current_draft": "",
-    "current_title": "",
-}
-
-for key, value in defaults.items():
-    if key not in st.session_state:
-        st.session_state[key] = value
+st.title("🤖 학교 행정업무 로봇")
+st.caption("공문 작성 · 업무 관리 · 예산 관리 · 민원 분류")
 
 
-# ==============================
-# 2. 공통 함수
-# ==============================
-def show_table(data):
-    if data:
+# =====================================
+# 2. 데이터 초기화
+# =====================================
+if "documents" not in st.session_state:
+    st.session_state.documents = []
+
+if "tasks" not in st.session_state:
+    st.session_state.tasks = []
+
+if "expenses" not in st.session_state:
+    st.session_state.expenses = []
+
+if "complaints" not in st.session_state:
+    st.session_state.complaints = []
+
+if "total_budget" not in st.session_state:
+    st.session_state.total_budget = 1000000000
+
+if "current_draft" not in st.session_state:
+    st.session_state.current_draft = ""
+
+if "current_title" not in st.session_state:
+    st.session_state.current_title = ""
+
+
+# =====================================
+# 3. 공통 함수
+# =====================================
+def display_table(data):
+    if len(data) > 0:
         st.dataframe(
             pd.DataFrame(data),
             use_container_width=True,
             hide_index=True
         )
     else:
-        st.info("등록된 데이터가 없습니다.")
+        st.info("등록된 내역이 없습니다.")
 
 
 def download_csv(data, filename):
-    if data:
-        csv = pd.DataFrame(data).to_csv(
-            index=False
-        ).encode("utf-8-sig")
-
+    if len(data) > 0:
+        csv_data = pd.DataFrame(data).to_csv(
+            index=False,
+            encoding="utf-8-sig"
+        )
         st.download_button(
-            "📥 CSV 다운로드",
-            data=csv,
+            "CSV 다운로드",
+            data=csv_data,
             file_name=filename,
             mime="text/csv"
         )
 
 
-def reset_section(data_key, reset_id, label, extra_reset=None):
-    confirm_key = f"{reset_id}_confirming"
-
-    if confirm_key not in st.session_state:
-        st.session_state[confirm_key] = False
-
-    st.divider()
-    st.subheader("🔄 초기화")
-
-    if st.button(
-        f"{label} 초기화",
-        key=f"{reset_id}_button"
-    ):
-        st.session_state[confirm_key] = True
-        st.rerun()
-
-    if st.session_state[confirm_key]:
-        st.warning(
-            f"{label} 데이터를 초기화할까요? "
-            "삭제한 데이터는 복구할 수 없습니다."
-        )
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-            if st.button(
-                "네, 초기화합니다",
-                key=f"{reset_id}_yes",
-                type="primary"
-            ):
-                st.session_state[data_key] = []
-
-                if extra_reset:
-                    for key, value in extra_reset.items():
-                        st.session_state[key] = value
-
-                st.session_state[confirm_key] = False
-                st.rerun()
-
-        with col2:
-            if st.button(
-                "취소",
-                key=f"{reset_id}_no"
-            ):
-                st.session_state[confirm_key] = False
-                st.rerun()
-
-
-def classify_complaint(text):
-    categories = {
+def classify_complaint(content):
+    rules = {
         "시설·안전": [
-            "시설", "고장", "파손", "안전",
-            "위험", "수리", "누수"
+            "시설", "고장", "안전", "화장실",
+            "냉난방", "위험", "수리"
         ],
         "예산·회계": [
-            "예산", "지출", "회계", "환불",
-            "결제", "비용", "납부"
+            "예산", "비용", "지출", "회계",
+            "환불", "납부"
         ],
         "서류·증명": [
-            "서류", "증명서", "발급",
-            "신청서", "공문", "문서"
+            "서류", "증명서", "발급", "신청서"
         ],
         "교육·프로그램": [
-            "교육", "수업", "프로그램",
-            "행사", "강의", "일정"
+            "수업", "교육", "프로그램",
+            "체험학습", "행사"
         ],
         "불편·서비스": [
-            "불편", "문의", "불친절",
-            "안내", "개선", "대기"
+            "불편", "문의", "안내", "급식"
         ]
     }
 
-    scores = {
-        category: sum(
-            keyword in text
-            for keyword in keywords
+    scores = {}
+
+    for category, keywords in rules.items():
+        scores[category] = sum(
+            keyword in content for keyword in keywords
         )
-        for category, keywords in categories.items()
-    }
 
     best = max(scores, key=scores.get)
 
@@ -143,13 +106,10 @@ def classify_complaint(text):
     return best
 
 
-# ==============================
-# 3. 사이드바 메뉴
-# ==============================
-st.sidebar.title("🤖 행정업무 로봇")
-st.sidebar.caption("스마트 행정 업무 관리 시스템")
-
-page = st.sidebar.radio(
+# =====================================
+# 4. 메뉴
+# =====================================
+page = st.sidebar.selectbox(
     "기능 선택",
     [
         "대시보드",
@@ -161,389 +121,471 @@ page = st.sidebar.radio(
 )
 
 
-# ==============================
-# 4. 대시보드
-# ==============================
+# =====================================
+# 5. 대시보드
+# =====================================
 if page == "대시보드":
-    st.title("🤖 행정업무 로봇")
-    st.write(
-        "공문 작성, 업무 관리, 예산 확인, "
-        "민원 분류를 한곳에서 처리합니다."
-    )
+    st.header("📊 행정업무 현황")
 
-    tasks = st.session_state.tasks
-    expenses = st.session_state.expenses
-    complaints = st.session_state.complaints
+    total_tasks = len(st.session_state.tasks)
 
-    completed = sum(
+    completed_tasks = sum(
         task["상태"] == "완료"
-        for task in tasks
+        for task in st.session_state.tasks
     )
 
-    progress = completed / len(tasks) if tasks else 0
+    if total_tasks > 0:
+        completion_rate = completed_tasks / total_tasks * 100
+    else:
+        completion_rate = 0
 
     spent = sum(
-        item["금액"]
-        for item in expenses
+        item["금액"] for item in st.session_state.expenses
     )
 
-    open_complaints = sum(
+    remaining = st.session_state.total_budget - spent
+
+    pending = sum(
         item["처리 상태"] != "처리 완료"
-        for item in complaints
+        for item in st.session_state.complaints
     )
 
     c1, c2, c3, c4 = st.columns(4)
 
-    c1.metric("등록 업무", f"{len(tasks)}건")
-    c2.metric("업무 완료율", f"{progress:.0%}")
-    c3.metric("누적 지출", f"{spent:,}원")
-    c4.metric("미완료 민원", f"{open_complaints}건")
+    c1.metric("전체 업무", f"{total_tasks}건")
+    c2.metric("업무 완료율", f"{completion_rate:.1f}%")
+    c3.metric("예산 잔액", f"{remaining:,}원")
+    c4.metric("미완료 민원", f"{pending}건")
 
-    st.subheader("기능 안내")
-    st.markdown("""
-    - 📝 공문 자동 작성: 키워드로 공문 초안 생성
-    - 📌 업무 진행률: 담당 업무와 마감일, 상태 관리
-    - 💰 예산 사용 현황: 총예산 입력 및 잔액 확인
-    - 📨 민원 종류 분류: 민원 분류 및 처리 상태 관리
-    """)
+    st.subheader("업무 진행 상황")
+
+    st.progress(int(completion_rate))
+    st.write(
+        f"완료된 업무: {completed_tasks} / {total_tasks}건"
+    )
+
+    st.subheader("저장된 자료")
+    st.write(f"공문: {len(st.session_state.documents)}건")
+    st.write(f"지출: {len(st.session_state.expenses)}건")
+    st.write(f"민원: {len(st.session_state.complaints)}건")
 
 
-# ==============================
-# 5. 공문 자동 작성
-# ==============================
+# =====================================
+# 6. 공문 자동 작성
+# =====================================
 elif page == "공문 자동 작성":
-    st.title("📝 공문 자동 작성")
+    st.header("📝 공문 자동 작성")
+    st.write("키워드를 선택해 공문 초안을 생성하세요.")
 
-    with st.form("document_form"):
-        title = st.text_input("공문 제목")
-        receiver = st.text_input("수신 기관")
-        sender = st.text_input("발신 기관")
-        keywords = st.text_area("핵심 키워드")
-        purpose = st.text_area("작성 목적 및 추가 안내")
+    keyword_options = [
+        "체험학습", "예산", "시설관리", "안전교육",
+        "행사안내", "회의개최", "교육활동", "물품구매",
+        "출장신청", "급식관리", "학생지원", "학부모안내",
+        "환경정비", "업무협조", "자료제출", "학교행사",
+        "연수계획", "방학안내", "교직원안내", "교육자료",
+        "진로교육", "안전점검", "학사일정", "급식안내",
+        "가정통신문", "결과보고", "계획서제출", "수업운영"
+    ]
 
-        submitted = st.form_submit_button(
-            "공문 초안 생성",
-            type="primary"
+    with st.form("make_document_form"):
+        title = st.text_input(
+            "공문 제목",
+            placeholder="예: 현장체험학습 실시 안내"
         )
 
-    if submitted:
-        if not title.strip() or not keywords.strip():
-            st.error("제목과 핵심 키워드를 입력해 주세요.")
+        receiver = st.text_input(
+            "수신",
+            placeholder="예: 전 교직원"
+        )
+
+        sender = st.text_input(
+            "발신",
+            placeholder="예: ○○고등학교장"
+        )
+
+        selected_keywords = st.multiselect(
+            "핵심 키워드 (여러 개 선택 가능)",
+            keyword_options
+        )
+
+        custom_keywords = st.text_input(
+            "추가 키워드",
+            placeholder="예: 수학여행, 버스 신청, 안전 점검"
+        )
+
+        purpose = st.text_area(
+            "공문 목적 및 주요 내용",
+            placeholder="공문에 들어갈 내용을 입력하세요."
+        )
+
+        make_button = st.form_submit_button(
+            "공문 초안 생성"
+        )
+
+    if make_button:
+        extra = [
+            word.strip().lstrip("#")
+            for word in custom_keywords.replace("，", ",").split(",")
+            if word.strip().lstrip("#")
+        ]
+
+        keywords = list(dict.fromkeys(
+            selected_keywords + extra
+        ))
+
+        if not title.strip():
+            st.error("공문 제목을 입력해 주세요.")
+
+        elif not keywords:
+            st.error("키워드를 하나 이상 선택하거나 입력해 주세요.")
+
         else:
-            draft = f"""수신: {receiver or '관련 부서'}
-발신: {sender or '행정지원팀'}
+            hashtags = " ".join(
+                "#" + word.replace(" ", "_")
+                for word in keywords
+            )
 
-제목: {title}
+            draft = (
+                f"수신: {receiver.strip() or '관련 담당자'}\n"
+                f"발신: {sender.strip() or '담당 부서'}\n\n"
+                f"제목: {title.strip()}\n\n"
+                f"핵심 키워드:\n{hashtags}\n\n"
+                f"1. 목적\n{purpose.strip() or '관련 업무를 원활하게 추진하고자 합니다.'}\n\n"
+                f"2. 주요 내용\n{', '.join(keywords)}\n\n"
+                "3. 협조 사항\n"
+                "관련 담당자는 내용을 확인하고 필요한 업무를 진행해 주시기 바랍니다.\n\n"
+                "※ 실제 발송 전 내용을 확인하고 수정해 주세요."
+            )
 
-1. 관련: 해당 업무 추진 계획
-
-2. 위와 관련하여 다음과 같이 안내하오니
-협조하여 주시기 바랍니다.
-
-  가. 주요 내용: {keywords}
-  나. 작성 목적: {purpose or '세부 사항 별도 안내'}
-
-3. 각 담당자는 내용을 확인하고 필요한 사항을
-기한 내에 이행하여 주시기 바랍니다.
-
-붙임: 필요 시 관련 자료 1부. 끝.
-"""
             st.session_state.current_draft = draft
-            st.session_state.current_title = title
+            st.session_state.current_title = title.strip()
+
+            # 편집창이 생성되기 전에 값을 설정
             st.session_state["document_editor"] = draft
-            st.success("공문 초안을 생성했습니다.")
 
     if st.session_state.current_draft:
-        edited = st.text_area(
-            "공문 내용 확인 및 수정",
-            height=300,
-            key="document_editor"
+        st.divider()
+        st.subheader("📄 공문 초안 편집")
+
+        edited_draft = st.text_area(
+            "생성된 공문을 자유롭게 수정하세요.",
+            key="document_editor",
+            height=320
         )
 
+        st.subheader("🏷️ 해시태그 미리 보기")
+
+        hashtag_lines = [
+            line for line in edited_draft.splitlines()
+            if "#" in line
+        ]
+
+        if hashtag_lines:
+            st.write(" ".join(hashtag_lines))
+        else:
+            st.write("공문에 해시태그가 없습니다.")
+
         st.download_button(
-            "📥 공문 TXT 다운로드",
-            data=edited,
+            "공문 TXT 다운로드",
+            data=edited_draft,
             file_name="공문_초안.txt",
             mime="text/plain"
         )
 
-        if st.button("작성 내역에 저장"):
+        if st.button("공문 내역에 저장"):
             st.session_state.documents.append({
+                "저장일": str(date.today()),
                 "제목": st.session_state.current_title,
-                "작성일": date.today().isoformat(),
-                "내용": edited
+                "공문 내용": edited_draft
             })
-            st.success("공문 작성 내역에 저장했습니다.")
+            st.success("공문을 저장했습니다.")
 
-    st.subheader("저장된 공문 내역")
-    show_table(st.session_state.documents)
+        if st.button("새 공문 작성"):
+            st.session_state.current_draft = ""
+            st.session_state.current_title = ""
+            st.session_state["document_editor"] = ""
+            st.rerun()
+
+    st.divider()
+    st.subheader("📚 저장된 공문")
+
+    display_table([
+        {
+            "저장일": item["저장일"],
+            "제목": item["제목"]
+        }
+        for item in st.session_state.documents
+    ])
+
     download_csv(
         st.session_state.documents,
-        "공문작성내역.csv"
+        "공문_내역.csv"
     )
 
-    reset_section(
-        "documents",
-        "reset_documents",
-        "공문 작성 내역"
-    )
+    if st.button("공문 내역 전체 삭제"):
+        st.session_state.documents = []
+        st.session_state.current_draft = ""
+        st.session_state.current_title = ""
+        st.session_state["document_editor"] = ""
+        st.rerun()
 
 
-# ==============================
-# 6. 업무 진행률
-# ==============================
+# =====================================
+# 7. 업무 진행률
+# =====================================
 elif page == "업무 진행률":
-    st.title("📌 업무 진행률 관리")
+    st.header("📈 업무 진행률 관리")
 
-    with st.form("task_form"):
+    with st.form("add_task_form"):
         task_name = st.text_input("업무명")
         manager = st.text_input("담당자")
-        deadline = st.date_input(
-            "마감일",
-            value=date.today() + timedelta(days=7)
-        )
-        status = st.selectbox(
-            "진행 상태",
-            ["시작 전", "진행 중", "완료", "보류"]
+        deadline = st.date_input("마감일", value=date.today())
+
+        task_status = st.selectbox(
+            "업무 상태",
+            ["예정", "진행 중", "완료"]
         )
 
-        submitted = st.form_submit_button("업무 등록")
+        add_task = st.form_submit_button("업무 등록")
 
-    if submitted:
-        if not task_name.strip():
-            st.error("업무명을 입력해 주세요.")
-        else:
+    if add_task:
+        if task_name.strip():
             st.session_state.tasks.append({
                 "업무명": task_name.strip(),
                 "담당자": manager.strip() or "미지정",
-                "마감일": deadline.isoformat(),
-                "상태": status
+                "마감일": str(deadline),
+                "상태": task_status
             })
             st.success("업무를 등록했습니다.")
             st.rerun()
+        else:
+            st.error("업무명을 입력해 주세요.")
 
-    tasks = st.session_state.tasks
+    st.subheader("등록된 업무")
 
-    if tasks:
-        completed = sum(
+    if st.session_state.tasks:
+        for i, task in enumerate(st.session_state.tasks):
+            with st.container(border=True):
+                st.write(f"**{task['업무명']}**")
+                st.write(f"담당자: {task['담당자']}")
+                st.write(f"마감일: {task['마감일']}")
+
+                new_status = st.selectbox(
+                    "상태",
+                    ["예정", "진행 중", "완료"],
+                    index=["예정", "진행 중", "완료"].index(
+                        task["상태"]
+                    ),
+                    key=f"task_status_{i}"
+                )
+
+                st.session_state.tasks[i]["상태"] = new_status
+
+                if st.button("이 업무 삭제", key=f"delete_task_{i}"):
+                    st.session_state.tasks.pop(i)
+                    st.rerun()
+
+        total = len(st.session_state.tasks)
+        done = sum(
             task["상태"] == "완료"
-            for task in tasks
+            for task in st.session_state.tasks
         )
-        progress = completed / len(tasks)
+        rate = done / total
 
-        st.metric("전체 업무 완료율", f"{progress:.0%}")
-        st.progress(progress)
+        st.subheader("전체 완료율")
+        st.progress(rate)
+        st.write(f"{rate * 100:.1f}%")
 
-        selected = st.selectbox(
-            "수정할 업무",
-            range(len(tasks)),
-            format_func=lambda i: (
-                f'{tasks[i]["업무명"]} ({tasks[i]["상태"]})'
-            ),
-            key="task_selected"
-        )
+    display_table(st.session_state.tasks)
 
-        statuses = ["시작 전", "진행 중", "완료", "보류"]
-
-        new_status = st.selectbox(
-            "변경할 상태",
-            statuses,
-            index=statuses.index(tasks[selected]["상태"]),
-            key="task_new_status"
-        )
-
-        if st.button("업무 상태 업데이트"):
-            tasks[selected]["상태"] = new_status
-            st.success("업무 상태를 변경했습니다.")
-            st.rerun()
-
-    show_table(st.session_state.tasks)
-    download_csv(st.session_state.tasks, "업무목록.csv")
-
-    reset_section(
-        "tasks",
-        "reset_tasks",
-        "업무 목록"
+    download_csv(
+        st.session_state.tasks,
+        "업무_진행률.csv"
     )
 
+    if st.button("업무 내역 전체 삭제"):
+        st.session_state.tasks = []
+        st.rerun()
 
-# ==============================
-# 7. 예산 사용 현황
-# ==============================
+
+# =====================================
+# 8. 예산 사용 현황
+# =====================================
 elif page == "예산 사용 현황":
-    st.title("💰 예산 관리")
+    st.header("💰 예산 사용 현황")
 
-    # 원하는 총예산 입력
-    budget = st.number_input(
-        "총예산 입력 (원)",
+    new_budget = st.number_input(
+        "총예산 (원)",
         min_value=0,
         max_value=100_000_000_000,
         value=int(st.session_state.total_budget),
-        step=1_000_000,
-        key="budget_input"
+        step=1_000_000
     )
 
-    st.session_state.total_budget = int(budget)
+    st.session_state.total_budget = new_budget
 
-    st.subheader("지출 등록")
-
-    with st.form("expense_form"):
-        name = st.text_input("지출 항목")
+    with st.form("add_expense_form"):
+        expense_name = st.text_input(
+            "지출 항목",
+            placeholder="예: 교육용 물품 구매"
+        )
 
         amount = st.number_input(
             "지출 금액 (원)",
             min_value=0,
+            max_value=100_000_000_000,
             value=0,
-            step=100_000
+            step=10000
         )
 
-        submitted = st.form_submit_button("지출 등록")
+        add_expense = st.form_submit_button("지출 등록")
 
-    if submitted:
-        if not name.strip():
+    if add_expense:
+        if not expense_name.strip():
             st.error("지출 항목을 입력해 주세요.")
         elif amount <= 0:
-            st.error("지출 금액은 0원보다 커야 합니다.")
+            st.error("지출 금액을 입력해 주세요.")
         else:
             st.session_state.expenses.append({
-                "지출 항목": name.strip(),
+                "등록일": str(date.today()),
+                "지출 항목": expense_name.strip(),
                 "금액": int(amount)
             })
             st.success("지출을 등록했습니다.")
             st.rerun()
 
-    # 남은 금액 계산
-    total_spent = sum(
-        item["금액"]
-        for item in st.session_state.expenses
+    spent = sum(
+        item["금액"] for item in st.session_state.expenses
     )
 
-    remaining = int(budget) - total_spent
+    remaining = new_budget - spent
 
-    st.divider()
-    st.subheader("💵 남은 예산")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("총예산", f"{new_budget:,}원")
+    c2.metric("총지출", f"{spent:,}원")
+    c3.metric("잔액", f"{remaining:,}원")
 
-    if remaining >= 0:
-        st.metric(
-            "사용 가능한 금액",
-            f"{remaining:,}원"
-        )
-    else:
-        st.metric(
-            "예산 초과 금액",
-            f"{abs(remaining):,}원"
-        )
-        st.warning("입력한 예산보다 지출이 많습니다.")
+    if new_budget > 0:
+        rate = spent / new_budget
+        st.subheader("예산 사용률")
+        st.progress(min(rate, 1.0))
+        st.write(f"{rate * 100:.1f}% 사용")
+
+    if remaining < 0:
+        st.error(f"예산을 {abs(remaining):,}원 초과했습니다.")
 
     st.subheader("지출 내역")
-    show_table(st.session_state.expenses)
+    display_table(st.session_state.expenses)
+
     download_csv(
         st.session_state.expenses,
-        "지출내역.csv"
+        "예산_지출내역.csv"
     )
 
-    reset_section(
-        "expenses",
-        "reset_expenses",
-        "예산 및 지출 내역",
-        extra_reset={
-            "total_budget": 1_000_000_000,
-            "budget_input": 1_000_000_000
-        }
-    )
+    if st.button("예산 및 지출 내역 초기화"):
+        st.session_state.expenses = []
+        st.session_state.total_budget = 1_000_000_000
+        st.rerun()
 
 
-# ==============================
-# 8. 민원 종류 분류
-# ==============================
+# =====================================
+# 9. 민원 종류 분류
+# =====================================
 elif page == "민원 종류 분류":
-    st.title("📨 민원 종류 분류")
-    st.write("민원 내용을 입력하면 키워드에 따라 분야를 분류합니다.")
+    st.header("📨 민원 종류 분류")
 
     with st.form("complaint_form"):
-        content = st.text_area("민원 내용")
-        submitted = st.form_submit_button("민원 분류 및 등록")
+        complaint_text = st.text_area(
+            "민원 내용",
+            placeholder="예: 교실 냉난방 시설이 작동하지 않습니다."
+        )
 
-    if submitted:
-        if len(content.strip()) < 3:
-            st.error("민원 내용을 3글자 이상 입력해 주세요.")
+        classify_button = st.form_submit_button("민원 분류")
+
+    if classify_button:
+        if not complaint_text.strip():
+            st.error("민원 내용을 입력해 주세요.")
         else:
-            category = classify_complaint(content)
+            category = classify_complaint(complaint_text)
+
+            st.success(f"추천 민원 유형: {category}")
 
             st.session_state.complaints.append({
-                "민원 내용": content.strip(),
-                "분류": category,
-                "접수일": date.today().isoformat(),
+                "접수일": str(date.today()),
+                "민원 내용": complaint_text.strip(),
+                "민원 유형": category,
                 "처리 상태": "접수"
             })
 
-            st.success(f"민원 분류 결과: {category}")
-            st.rerun()
+    st.divider()
+    st.subheader("접수된 민원")
 
-    complaints = st.session_state.complaints
+    categories = [
+        "시설·안전",
+        "예산·회계",
+        "서류·증명",
+        "교육·프로그램",
+        "불편·서비스",
+        "일반 문의"
+    ]
 
-    if complaints:
-        selected = st.selectbox(
-            "수정할 민원",
-            range(len(complaints)),
-            format_func=lambda i: (
-                f'{complaints[i]["분류"]} - '
-                f'{complaints[i]["민원 내용"][:25]}'
-            ),
-            key="complaint_selected"
-        )
+    statuses = ["접수", "처리 중", "처리 완료"]
 
-        categories = [
-            "시설·안전",
-            "예산·회계",
-            "서류·증명",
-            "교육·프로그램",
-            "불편·서비스",
-            "일반 문의"
-        ]
+    if st.session_state.complaints:
+        for i, item in enumerate(st.session_state.complaints):
+            with st.container(border=True):
+                st.write(f"**민원 {i + 1}**")
+                st.write(item["민원 내용"])
+                st.caption(f"접수일: {item['접수일']}")
 
-        states = ["접수", "처리 중", "처리 완료"]
+                category_index = (
+                    categories.index(item["민원 유형"])
+                    if item["민원 유형"] in categories else 5
+                )
 
-        new_category = st.selectbox(
-            "분류 수정",
-            categories,
-            index=categories.index(
-                complaints[selected]["분류"]
-            ),
-            key="complaint_new_category"
-        )
+                status_index = (
+                    statuses.index(item["처리 상태"])
+                    if item["처리 상태"] in statuses else 0
+                )
 
-        new_state = st.selectbox(
-            "처리 상태 수정",
-            states,
-            index=states.index(
-                complaints[selected]["처리 상태"]
-            ),
-            key="complaint_new_state"
-        )
+                new_category = st.selectbox(
+                    "민원 유형",
+                    categories,
+                    index=category_index,
+                    key=f"category_{i}"
+                )
 
-        if st.button("민원 정보 업데이트"):
-            complaints[selected]["분류"] = new_category
-            complaints[selected]["처리 상태"] = new_state
-            st.success("민원 정보를 업데이트했습니다.")
-            st.rerun()
+                new_status = st.selectbox(
+                    "처리 상태",
+                    statuses,
+                    index=status_index,
+                    key=f"status_{i}"
+                )
 
-    show_table(st.session_state.complaints)
-    download_csv(st.session_state.complaints, "민원목록.csv")
+                st.session_state.complaints[i]["민원 유형"] = new_category
+                st.session_state.complaints[i]["처리 상태"] = new_status
 
-    reset_section(
-        "complaints",
-        "reset_complaints",
-        "민원 목록"
+                if st.button("민원 삭제", key=f"delete_complaint_{i}"):
+                    st.session_state.complaints.pop(i)
+                    st.rerun()
+
+    display_table(st.session_state.complaints)
+
+    download_csv(
+        st.session_state.complaints,
+        "민원_목록.csv"
     )
 
+    if st.button("민원 내역 전체 삭제"):
+        st.session_state.complaints = []
+        st.rerun()
 
-# ==============================
-# 9. 하단 안내
-# ==============================
+
+# =====================================
+# 10. 안내
+# =====================================
 st.divider()
 st.caption(
-    "행정업무 로봇 | 교육·시연용 프로그램입니다. "
-    "데이터는 현재 세션에 저장되며, "
-    "실제 행정 시스템과 연결되어 있지 않습니다."
+    "교육용 시범 프로그램입니다. 데이터는 세션에 저장되므로 "
+    "앱 재시작 시 사라질 수 있습니다. 공문은 실제 발송 전 검토하세요."
 )
