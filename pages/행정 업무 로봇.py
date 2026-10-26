@@ -55,36 +55,7 @@ def download_csv(data, filename):
         )
 
 
-def format_eok(amount):
-    amount = int(amount)
-    eok = amount // 100_000_000
-    remainder = amount % 100_000_000
-
-    if remainder == 0:
-        return f"약 {eok}억원"
-
-    parts = [f"약 {eok}억원"]
-
-    for unit_value, unit_name in [
-        (10_000_000, "천만원"),
-        (1_000_000, "백만원"),
-        (10_000, "만원"),
-        (1, "원")
-    ]:
-        value = remainder // unit_value
-        remainder %= unit_value
-
-        if value:
-            parts.append(f"{value}{unit_name}")
-
-    return " ".join(parts)
-
-
 def reset_section(data_key, reset_id, label, extra_reset=None):
-    """
-    지정된 기능의 데이터만 초기화한다.
-    extra_reset에는 함께 초기화할 세션 값을 전달할 수 있다.
-    """
     confirm_key = f"{reset_id}_confirming"
 
     if confirm_key not in st.session_state:
@@ -98,6 +69,7 @@ def reset_section(data_key, reset_id, label, extra_reset=None):
         key=f"{reset_id}_button"
     ):
         st.session_state[confirm_key] = True
+        st.rerun()
 
     if st.session_state[confirm_key]:
         st.warning(
@@ -188,9 +160,6 @@ page = st.sidebar.radio(
     ]
 )
 
-st.sidebar.divider()
-st.sidebar.caption("간편하고 효율적인 행정 업무")
-
 
 # ==============================
 # 4. 대시보드
@@ -198,8 +167,8 @@ st.sidebar.caption("간편하고 효율적인 행정 업무")
 if page == "대시보드":
     st.title("🤖 행정업무 로봇")
     st.write(
-        "행정 업무에 필요한 문서 작성, 업무 관리, "
-        "예산 확인, 민원 분류를 지원합니다."
+        "공문 작성, 업무 관리, 예산 확인, "
+        "민원 분류를 한곳에서 처리합니다."
     )
 
     tasks = st.session_state.tasks
@@ -227,16 +196,15 @@ if page == "대시보드":
 
     c1.metric("등록 업무", f"{len(tasks)}건")
     c2.metric("업무 완료율", f"{progress:.0%}")
-    c3.metric("누적 지출", format_eok(spent))
+    c3.metric("누적 지출", f"{spent:,}원")
     c4.metric("미완료 민원", f"{open_complaints}건")
 
-    st.subheader("사용 가능한 기능")
-
+    st.subheader("기능 안내")
     st.markdown("""
-    - 📝 **공문 자동 작성:** 키워드를 활용해 공문 초안을 생성합니다.
-    - 📌 **업무 진행률:** 담당 업무와 마감일, 처리 상태를 관리합니다.
-    - 💰 **예산 사용 현황:** 예산과 지출, 잔액을 확인합니다.
-    - 📨 **민원 종류 분류:** 민원을 분야별로 분류하고 처리 상태를 관리합니다.
+    - 📝 공문 자동 작성: 키워드로 공문 초안 생성
+    - 📌 업무 진행률: 담당 업무와 마감일, 상태 관리
+    - 💰 예산 사용 현황: 총예산 입력 및 잔액 확인
+    - 📨 민원 종류 분류: 민원 분류 및 처리 상태 관리
     """)
 
 
@@ -245,7 +213,6 @@ if page == "대시보드":
 # ==============================
 elif page == "공문 자동 작성":
     st.title("📝 공문 자동 작성")
-    st.write("핵심 키워드를 입력해 공문 초안을 작성하세요.")
 
     with st.form("document_form"):
         title = st.text_input("공문 제목")
@@ -261,7 +228,7 @@ elif page == "공문 자동 작성":
 
     if submitted:
         if not title.strip() or not keywords.strip():
-            st.error("공문 제목과 핵심 키워드를 입력해 주세요.")
+            st.error("제목과 핵심 키워드를 입력해 주세요.")
         else:
             draft = f"""수신: {receiver or '관련 부서'}
 발신: {sender or '행정지원팀'}
@@ -340,10 +307,7 @@ elif page == "업무 진행률":
             ["시작 전", "진행 중", "완료", "보류"]
         )
 
-        submitted = st.form_submit_button(
-            "업무 등록",
-            type="primary"
-        )
+        submitted = st.form_submit_button("업무 등록")
 
     if submitted:
         if not task_name.strip():
@@ -369,8 +333,6 @@ elif page == "업무 진행률":
 
         st.metric("전체 업무 완료율", f"{progress:.0%}")
         st.progress(progress)
-
-        st.subheader("업무 상태 수정")
 
         selected = st.selectbox(
             "수정할 업무",
@@ -409,56 +371,33 @@ elif page == "업무 진행률":
 # 7. 예산 사용 현황
 # ==============================
 elif page == "예산 사용 현황":
-    st.title("💰 예산 사용 현황")
+    st.title("💰 예산 관리")
 
-    st.subheader("총예산 설정")
-
+    # 원하는 총예산 입력
     budget = st.number_input(
-        "총예산액 (원)",
+        "총예산 입력 (원)",
         min_value=0,
         max_value=100_000_000_000,
         value=int(st.session_state.total_budget),
-        step=10_000_000,
+        step=1_000_000,
         key="budget_input"
     )
 
     st.session_state.total_budget = int(budget)
 
-    st.info(f"현재 총예산: **{format_eok(budget)}**")
-
-    st.subheader("지출 내역 등록")
+    st.subheader("지출 등록")
 
     with st.form("expense_form"):
         name = st.text_input("지출 항목")
-
-        category = st.selectbox(
-            "지출 분류",
-            [
-                "인건비",
-                "시설 관리",
-                "사무용품",
-                "교육·행사",
-                "인쇄·홍보",
-                "기타"
-            ]
-        )
 
         amount = st.number_input(
             "지출 금액 (원)",
             min_value=0,
             value=0,
-            step=1_000_000
+            step=100_000
         )
 
-        expense_date = st.date_input(
-            "지출일",
-            value=date.today()
-        )
-
-        submitted = st.form_submit_button(
-            "지출 내역 추가",
-            type="primary"
-        )
+        submitted = st.form_submit_button("지출 등록")
 
     if submitted:
         if not name.strip():
@@ -468,45 +407,40 @@ elif page == "예산 사용 현황":
         else:
             st.session_state.expenses.append({
                 "지출 항목": name.strip(),
-                "분류": category,
-                "금액": int(amount),
-                "지출일": expense_date.isoformat()
+                "금액": int(amount)
             })
-            st.success("지출 내역을 추가했습니다.")
+            st.success("지출을 등록했습니다.")
             st.rerun()
 
-    expenses = st.session_state.expenses
-    spent = sum(item["금액"] for item in expenses)
-    balance = int(budget) - spent
-    usage = spent / budget if budget else 0
+    # 남은 금액 계산
+    total_spent = sum(
+        item["금액"]
+        for item in st.session_state.expenses
+    )
 
-    st.subheader("예산 사용 요약")
+    remaining = int(budget) - total_spent
 
-    c1, c2, c3 = st.columns(3)
+    st.divider()
+    st.subheader("💵 남은 예산")
 
-    c1.metric("총예산", format_eok(budget))
-    c2.metric("누적 지출", format_eok(spent))
-    c3.metric("잔액", format_eok(balance) if balance >= 0
-              else f"초과 {format_eok(abs(balance))[2:]}")
-
-    st.progress(min(usage, 1.0))
-    st.write(f"예산 사용률: **{usage:.1%}**")
-
-    if usage > 1:
-        st.warning("예산을 초과했습니다.")
+    if remaining >= 0:
+        st.metric(
+            "사용 가능한 금액",
+            f"{remaining:,}원"
+        )
+    else:
+        st.metric(
+            "예산 초과 금액",
+            f"{abs(remaining):,}원"
+        )
+        st.warning("입력한 예산보다 지출이 많습니다.")
 
     st.subheader("지출 내역")
-    show_table(expenses)
-    download_csv(expenses, "예산지출내역.csv")
-
-    if expenses:
-        st.subheader("분류별 지출")
-        chart = (
-            pd.DataFrame(expenses)
-            .groupby("분류")["금액"]
-            .sum()
-        )
-        st.bar_chart(chart)
+    show_table(st.session_state.expenses)
+    download_csv(
+        st.session_state.expenses,
+        "지출내역.csv"
+    )
 
     reset_section(
         "expenses",
@@ -524,17 +458,11 @@ elif page == "예산 사용 현황":
 # ==============================
 elif page == "민원 종류 분류":
     st.title("📨 민원 종류 분류")
-    st.write(
-        "민원 내용을 입력하면 키워드에 따라 "
-        "담당 분야를 제안합니다."
-    )
+    st.write("민원 내용을 입력하면 키워드에 따라 분야를 분류합니다.")
 
     with st.form("complaint_form"):
         content = st.text_area("민원 내용")
-        submitted = st.form_submit_button(
-            "민원 분류 및 등록",
-            type="primary"
-        )
+        submitted = st.form_submit_button("민원 분류 및 등록")
 
     if submitted:
         if len(content.strip()) < 3:
@@ -555,8 +483,6 @@ elif page == "민원 종류 분류":
     complaints = st.session_state.complaints
 
     if complaints:
-        st.subheader("민원 정보 수정")
-
         selected = st.selectbox(
             "수정할 민원",
             range(len(complaints)),
