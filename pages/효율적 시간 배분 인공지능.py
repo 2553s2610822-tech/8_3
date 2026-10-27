@@ -965,6 +965,66 @@ with result_tab:
                 item.get("reason", ""),
             ])
 
+# 원형 시간표와 일정 목록을 좌우로 배치
+chart_col, list_col = st.columns([1.05, 1])
+
+# 왼쪽: 기존 원형 시간표
+with chart_col:
+    st.subheader("🕒 24시간 원형 시간표")
+
+    # 기존 코드에서 원형 SVG를 표시하던 줄을 여기에 그대로 유지
+    st.markdown(
+        make_clock_svg(schedule),
+        unsafe_allow_html=True,
+    )
+
+    st.caption("색상은 일정의 중요도를 나타냅니다.")
+    st.markdown("🔴 높음　🟠 보통　🟢 낮음")
+
+# 오른쪽: 시간순 일정 목록
+with list_col:
+    st.subheader("📋 오늘의 일정")
+
+    importance_style = {
+        "높음": "🔴",
+        "보통": "🟠",
+        "낮음": "🟢",
+    }
+
+    sorted_schedule = sorted(
+        schedule,
+        key=lambda item: item["start_min"],
+    )
+
+    if not sorted_schedule:
+        st.info("배정된 일정이 없습니다.")
+
+    for item in sorted_schedule:
+        start = hhmm(item["start_min"])
+        end = hhmm(item["end_min"])
+        importance = item.get("importance", "보통")
+        icon = importance_style.get(importance, "⚪")
+
+        with st.container(border=True):
+            st.markdown(
+                f"**{icon} {start} – {end}**"
+            )
+            st.markdown(f"**{item['name']}**")
+            st.caption(
+                f"{item.get('task_type', '기타')} · "
+                f"{item.get('duration', 0)}분 · "
+                f"중요도 {importance}"
+            )
+
+            if item.get("subject"):
+                st.caption(f"과목: {item['subject']}")
+
+            if item.get("class_name"):
+                st.caption(f"학급: {item['class_name']}")
+
+            if item.get("reason"):
+                st.write(f"배정 이유: {item['reason']}")
+        
         st.download_button(
             "📥 교사 업무표 CSV 다운로드",
             data="\ufeff" + buffer.getvalue(),
